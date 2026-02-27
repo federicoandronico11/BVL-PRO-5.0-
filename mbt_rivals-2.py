@@ -1001,160 +1001,40 @@ def _get_card_border_style(tier_name, color, rarity):
 
 
 # ─── CARD RENDERING ───────────────────────────────────────────────────────────
+# render_card_html è un wrapper di render_card_html_custom (definito più avanti).
+# Python carica tutto il modulo prima dell'esecuzione, quindi funziona correttamente.
 
 def render_card_html(card_data, size="normal", show_special_effects=True):
-    """Genera HTML completo per una carta MBT con nuove grafiche PNG e animazioni v3.0."""
-    ovr = card_data.get("overall", 40)
-    tier_name = get_tier_by_ovr(ovr)
-    tier_info = CARD_TIERS.get(tier_name, CARD_TIERS["Bronzo Comune"])
-    color = tier_info["color"]
-    rarity = tier_info.get("rarity", 0)
-    nome = card_data.get("nome", "Unknown")
-    cognome = card_data.get("cognome", "")
-    role = card_data.get("ruolo", "SPIKER")
-    role_icon = ROLE_ICONS.get(role, "⚡")
-    photo_path = card_data.get("foto_path", "")
+    """Wrapper principale — usa PNG carta custom e animazioni salvate se disponibili."""
+    tier_name = get_tier_by_ovr(card_data.get("overall", 40))
+    tier_color = CARD_TIERS.get(tier_name, {}).get("color", "#ffd700")
+    custom_anims = card_data.get("custom_animations", [])
 
-    atk = card_data.get("attacco", 40)
-    dif = card_data.get("difesa", 40)
-    bat = card_data.get("battuta", 40)
-
-    if size == "small":
-        width = "105px"
-        font_ovr = "1.05rem"
-        font_name = "0.55rem"
-        font_first = "0.32rem"
-    elif size == "large":
-        width = "185px"
-        font_ovr = "1.9rem"
-        font_name = "0.95rem"
-        font_first = "0.52rem"
+    # PNG corpo carta: usa path custom se esiste, altrimenti tier default
+    card_png_b64, card_png_mime = None, "image/png"
+    card_png_path = card_data.get("card_png_path", "")
+    if card_png_path and os.path.exists(card_png_path):
+        with open(card_png_path, "rb") as f:
+            card_png_b64 = base64.b64encode(f.read()).decode()
+        ext = card_png_path.rsplit(".", 1)[-1].lower()
+        card_png_mime = {"png":"image/png","webp":"image/webp","jpg":"image/jpeg","jpeg":"image/jpeg"}.get(ext,"image/png")
     else:
-        width = "140px"
-        font_ovr = "1.4rem"
-        font_name = "0.72rem"
-        font_first = "0.42rem"
+        card_png_b64, card_png_mime = _get_card_bg_b64(tier_name)
 
-    # Immagine di sfondo tier (PNG nuova grafica)
-    bg_b64, bg_mime = _get_card_bg_b64(tier_name)
-    if bg_b64:
-        bg_style = (
-            "background-image:url('data:{mime};base64,{b64}');"
-            "background-size:cover;"
-            "background-position:center top;"
-        ).format(mime=bg_mime, b64=bg_b64)
-        bg_div = '<div class="mbt-card-bg-image" style="{}"></div>'.format(bg_style)
-    else:
-        # Fallback gradient basato su tier
-        fallback_colors = {
-            "Bronzo Comune": "linear-gradient(160deg,#3d2b1f,#6b4226,#3d2b1f)",
-            "Bronzo Raro": "linear-gradient(160deg,#4a2e10,#7a5030,#4a2e10)",
-            "Argento Comune": "linear-gradient(160deg,#2a2a2a,#555,#2a2a2a)",
-            "Argento Raro": "linear-gradient(160deg,#333,#666,#333)",
-            "Oro Comune": "linear-gradient(160deg,#2a1f00,#5a4200,#2a1f00)",
-            "Oro Raro": "linear-gradient(160deg,#3a2800,#6a5200,#3a2800)",
-        }
-        fb = fallback_colors.get(tier_name, "linear-gradient(160deg,#111,#222,#111)")
-        bg_div = '<div class="mbt-card-bg-image" style="background:{};"></div>'.format(fb)
+    # Animazioni custom
+    custom_css, custom_overlay = ("", "")
+    if custom_anims:
+        custom_css, custom_overlay = build_custom_animation_css(custom_anims, card_color=tier_color)
 
-    # Overlay scuro per leggibilità testo
-    overlay_gradient = (
-        "linear-gradient(180deg,"
-        "rgba(0,0,0,0.18) 0%,"
-        "rgba(0,0,0,0.05) 35%,"
-        "rgba(0,0,0,0.6) 72%,"
-        "rgba(0,0,0,0.88) 100%)"
+    return render_card_html_custom(
+        card_data,
+        card_png_b64=card_png_b64,
+        card_png_mime=card_png_mime,
+        custom_anim_css=custom_css,
+        custom_anim_overlay=custom_overlay,
+        size=size,
+        show_special_effects=(show_special_effects and not custom_anims)
     )
-    overlay_div = '<div class="mbt-card-overlay" style="background:{};"></div>'.format(overlay_gradient)
-
-    # Foto atleta
-    if photo_path and os.path.exists(photo_path):
-        with open(photo_path, "rb") as f:
-            b64 = base64.b64encode(f.read()).decode()
-        ext = photo_path.rsplit(".", 1)[-1].lower()
-        mime_img = "image/png" if ext == "png" else "image/jpeg"
-        foto_html = '<img class="mbt-card-photo" src="data:{};base64,{}" style="opacity:0.88">'.format(mime_img, b64)
-    else:
-        foto_html = '<div class="mbt-card-photo-placeholder">{}</div>'.format(role_icon)
-
-    # Animazione overlay
-    anim_overlay = ""
-    if show_special_effects:
-        anim_overlay = _get_card_animation_overlay(tier_name, color, rarity)
-
-    # Bordo/glow stile
-    border_style = _get_card_border_style(tier_name, color, rarity)
-
-    # Hover overlay (glow radiale al hover)
-    hover_overlay = '<div class="mbt-card-hover-overlay" style="background:radial-gradient(ellipse at 50% 25%,{}33 0%,transparent 65%);"></div>'.format(color)
-
-    # Firma su hover per carte rare
-    hover_sign = ""
-    if rarity >= 8:
-        hover_sign = (
-            '<div class="card-signature" style="position:absolute;bottom:72px;width:100%;'
-            'text-align:center;font-family:cursive;font-size:0.7rem;color:{c};opacity:0;'
-            'transition:opacity 0.35s;z-index:15;text-shadow:0 0 10px {c}">✦ {n} ✦</div>'
-            '<style>.mbt-card-wrap:hover .card-signature{{opacity:1!important;}}</style>'
-        ).format(c=color, n=(cognome or nome).upper())
-
-    tier_short = tier_name.split()[0] if len(tier_name.split()) > 1 else tier_name
-    display_first = nome.upper()
-    display_last = (cognome or nome).upper()
-
-    html = (
-        '<div class="mbt-card-wrap" style="width:{width}">'
-        '<div class="mbt-card" style="width:{width};{border}">'
-        '{bg}{overlay}'
-        '<div class="mbt-card-ovr" style="color:{color};font-size:{fovr}">{ovr}</div>'
-        '<div class="mbt-card-tier-label" style="color:{color}">{tier_short}</div>'
-        '{foto}'
-        '<div class="mbt-card-name-block">'
-        '<span class="mbt-card-firstname" style="color:{color};font-size:{ffirst}">{first}</span>'
-        '<span class="mbt-card-lastname" style="color:{color};font-size:{fname}">{last}</span>'
-        '</div>'
-        '<div class="mbt-card-role" style="color:{color}">{role_icon} {role}</div>'
-        '<div class="mbt-card-stats">'
-        '<div class="mbt-stat">'
-        '<div class="mbt-stat-val" style="color:{color}">{atk}</div>'
-        '<div class="mbt-stat-lbl">ATK</div>'
-        '</div>'
-        '<div class="mbt-stat">'
-        '<div class="mbt-stat-val" style="color:{color}">{dif}</div>'
-        '<div class="mbt-stat-lbl">DEF</div>'
-        '</div>'
-        '<div class="mbt-stat">'
-        '<div class="mbt-stat-val" style="color:{color}">{bat}</div>'
-        '<div class="mbt-stat-lbl">BAT</div>'
-        '</div>'
-        '</div>'
-        '{anim}{hover}{sign}'
-        '</div>'
-        '</div>'
-    ).format(
-        width=width,
-        border=border_style,
-        bg=bg_div,
-        overlay=overlay_div,
-        color=color,
-        fovr=font_ovr,
-        ovr=ovr,
-        tier_short=tier_short,
-        foto=foto_html,
-        ffirst=font_first,
-        fname=font_name,
-        first=display_first,
-        last=display_last,
-        role_icon=role_icon,
-        role=role,
-        atk=atk,
-        dif=dif,
-        bat=bat,
-        anim=anim_overlay,
-        hover=hover_overlay,
-        sign=hover_sign,
-    )
-    return html
 
 
 # ─── PACK OPENING ANIMATION ─────────────────────────────────────────────────
@@ -1978,11 +1858,463 @@ def _render_powers_tab(rivals_data):
                             unsafe_allow_html=True)
 
 
+# ─── ANIMATION CATALOG (35 effetti) ──────────────────────────────────────────
+
+ANIMATION_CATALOG = {
+    "✨ Shimmer & Shine": {
+        "shimmer_gold":       ("Shimmer Oro",        "Riflesso dorato scorrevole"),
+        "shimmer_silver":     ("Shimmer Argento",     "Riflesso argentato scorrevole"),
+        "shimmer_rainbow":    ("Shimmer Arcobaleno",  "Riflesso iridescente"),
+        "glass_shine":        ("Glass Shine",         "Effetto vetro lucido con bagliore"),
+        "holographic":        ("Olografico",          "Sheen olografico continuo"),
+    },
+    "🔥 Fire & Energy": {
+        "fire_bottom":        ("Fuoco Base",          "Fiamme dal basso animate"),
+        "fire_intense":       ("Fuoco Intenso",       "Fiamme alte con fulmini"),
+        "lightning":          ("Fulmini",             "Lampi elettrici sulla carta"),
+        "plasma_edge":        ("Plasma Edge",         "Bordo al plasma pulsante"),
+        "energy_burst":       ("Energy Burst",        "Esplosione di energia centrale"),
+    },
+    "🌌 Nebula & Space": {
+        "nebula_purple":      ("Nebulosa Viola",      "Vortice cosmico viola"),
+        "nebula_gold":        ("Nebulosa Dorata",     "Orbe luminosa dorata fluttuante"),
+        "nebula_blue":        ("Nebulosa Blu",        "Galassia blu rotante"),
+        "stars_drift":        ("Stelle Fluttuanti",   "Particelle stellari vaganti"),
+        "cosmic_beam":        ("Raggio Cosmico",      "Beam conico rotante"),
+    },
+    "💎 Particles & Dust": {
+        "particles_gold":     ("Particelle Oro",      "Polvere dorata che sale"),
+        "particles_blue":     ("Particelle Blu",      "Cristalli blu fluttuanti"),
+        "particles_white":    ("Particelle Bianche",  "Scintille bianche"),
+        "particles_fire":     ("Particelle Fuoco",    "Braci arancioni che salgono"),
+        "particles_purple":   ("Particelle Viola",    "Polvere viola magica"),
+    },
+    "🪞 Overlays & Glass": {
+        "glassmorphism":      ("Glassmorphism",       "Overlay vetro con blur"),
+        "dark_vignette":      ("Vignette Scura",      "Bordi scuri profondi"),
+        "color_overlay_red":  ("Overlay Rosso",       "Tinta rossa sulla carta"),
+        "color_overlay_gold": ("Overlay Oro",         "Tinta dorata sulla carta"),
+        "scanlines":          ("Scanlines",           "Linee orizzontali stile CRT"),
+    },
+    "⚡ Borders & Glow": {
+        "glow_pulse_gold":    ("Pulse Oro",           "Bordo oro pulsante"),
+        "glow_pulse_red":     ("Pulse Rosso",         "Bordo rosso infuocato"),
+        "glow_pulse_blue":    ("Pulse Blu",           "Bordo blu elettrico"),
+        "glow_pulse_white":   ("Pulse Bianco",        "Bordo bianco divino"),
+        "rainbow_border":     ("Bordo Arcobaleno",    "Bordo che cambia colore"),
+    },
+    "🎭 Hover Effects": {
+        "hover_zoom":         ("Zoom Hover",          "Zoom al passaggio mouse"),
+        "hover_tilt_3d":      ("Tilt 3D",             "Inclinazione 3D al hover"),
+        "hover_glow_color":   ("Glow Colorato Hover", "Bagliore colorato al hover"),
+        "hover_crack":        ("Crack Reveal",        "Crepe luminose al hover"),
+        "hover_shadow_epic":  ("Ombra Epica Hover",   "Ombra drammatica al hover"),
+    },
+}
+
+def build_custom_animation_css(anim_ids, card_color="#ffd700"):
+    """Genera CSS/HTML per le animazioni selezionate dall'editor."""
+    css_parts = []
+    html_layers = []
+    c = card_color
+
+    for anim_id in anim_ids:
+        if anim_id == "shimmer_gold":
+            html_layers.append(
+                '<div style="position:absolute;top:0;left:-80%;width:40%;height:100%;'
+                'background:linear-gradient(105deg,transparent,rgba(255,215,0,0.28),transparent);'
+                'animation:shimmer 2s infinite;transform:skewX(-15deg);pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "shimmer_silver":
+            html_layers.append(
+                '<div style="position:absolute;top:0;left:-80%;width:40%;height:100%;'
+                'background:linear-gradient(105deg,transparent,rgba(220,220,255,0.3),transparent);'
+                'animation:shimmer 2.5s infinite;transform:skewX(-15deg);pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "shimmer_rainbow":
+            css_parts.append(
+                '@keyframes rainbowShimmer{0%{background-position:0% center}100%{background-position:400% center}}'
+            )
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;'
+                'background:linear-gradient(105deg,transparent 35%,rgba(255,0,128,0.18) 40%,'
+                'rgba(255,200,0,0.18) 45%,rgba(0,255,200,0.18) 50%,rgba(100,100,255,0.18) 55%,transparent 60%);'
+                'background-size:400% 100%;animation:rainbowShimmer 3s linear infinite;'
+                'pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "glass_shine":
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;'
+                'background:linear-gradient(135deg,rgba(255,255,255,0.12) 0%,transparent 40%,rgba(255,255,255,0.06) 100%);'
+                'pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "holographic":
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;'
+                'background:linear-gradient(45deg,transparent 30%,rgba(255,255,255,0.14) 50%,transparent 70%);'
+                'background-size:200% 200%;animation:holographic 2.5s infinite;pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "fire_bottom":
+            html_layers.append(
+                '<div style="position:absolute;bottom:0;left:0;right:0;height:35%;border-radius:0 0 14px 14px;'
+                'background:linear-gradient(0deg,rgba(255,60,0,0.55),rgba(255,120,0,0.25),transparent);'
+                'animation:fireFlicker 0.5s infinite alternate;pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "fire_intense":
+            html_layers.append(
+                '<div style="position:absolute;bottom:0;left:0;right:0;height:50%;'
+                'background:linear-gradient(0deg,rgba(255,40,0,0.65),rgba(255,100,0,0.3),rgba(255,200,0,0.1),transparent);'
+                'animation:fireFlicker 0.35s infinite alternate;pointer-events:none;z-index:6"></div>'
+                '<div style="position:absolute;top:10%;left:46%;width:3px;height:75%;'
+                'background:linear-gradient(180deg,rgba(255,255,100,0.9),transparent);'
+                'transform:rotate(6deg);animation:lightningFlash 1.1s infinite;box-shadow:0 0 8px #ffff00;'
+                'pointer-events:none;z-index:7"></div>'
+            )
+        elif anim_id == "lightning":
+            html_layers.append(
+                '<div style="position:absolute;top:5%;left:44%;width:2px;height:80%;'
+                'background:linear-gradient(180deg,rgba(255,255,255,0.95),rgba(100,180,255,0.6),transparent);'
+                'transform:rotate(5deg);animation:lightningFlash 1.4s infinite;box-shadow:0 0 10px #aaddff;'
+                'pointer-events:none;z-index:7"></div>'
+                '<div style="position:absolute;top:15%;left:25%;width:2px;height:55%;'
+                'background:linear-gradient(180deg,rgba(200,200,255,0.8),transparent);'
+                'transform:rotate(-12deg);animation:lightningFlash 1.9s 0.4s infinite;box-shadow:0 0 6px #8888ff;'
+                'pointer-events:none;z-index:7"></div>'
+            )
+        elif anim_id == "plasma_edge":
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;'
+                'box-shadow:0 0 15px {c},0 0 30px {c}88,inset 0 0 15px {c}33;'
+                'animation:pulseGlow 1.8s infinite;pointer-events:none;z-index:6"></div>'.format(c=c)
+            )
+        elif anim_id == "energy_burst":
+            css_parts.append(
+                '@keyframes energyBurst{0%,100%{transform:scale(0.8);opacity:0.3}'
+                '50%{transform:scale(1.2);opacity:0.9}}'
+            )
+            html_layers.append(
+                '<div style="position:absolute;top:20%;left:50%;transform:translateX(-50%);'
+                'width:60%;height:45%;border-radius:50%;'
+                'background:radial-gradient(ellipse at center,{c}44 0%,{c}22 40%,transparent 70%);'
+                'animation:energyBurst 2s ease-in-out infinite;pointer-events:none;z-index:6"></div>'.format(c=c)
+            )
+        elif anim_id == "nebula_purple":
+            html_layers.append(
+                '<div style="position:absolute;inset:-30px;border-radius:50%;'
+                'background:conic-gradient(from 0deg,transparent,rgba(155,0,255,0.2),transparent,rgba(100,0,200,0.15),transparent);'
+                'animation:nebulaSwirl 5s linear infinite;pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "nebula_gold":
+            html_layers.append(
+                '<div style="position:absolute;top:-15%;left:-10%;width:70%;height:70%;'
+                'background:radial-gradient(ellipse at center,rgba(255,215,0,0.22) 0%,transparent 65%);'
+                'animation:nebulaFloat 6s ease-in-out infinite;pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "nebula_blue":
+            html_layers.append(
+                '<div style="position:absolute;inset:-25px;border-radius:50%;'
+                'background:conic-gradient(from 0deg,transparent,rgba(65,105,225,0.22),transparent,rgba(100,180,255,0.15),transparent);'
+                'animation:beamRotate 6s linear infinite;pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "stars_drift":
+            stars = ""
+            for _ in range(8):
+                dx = random.randint(-20, 20)
+                dy = random.randint(-45, -10)
+                delay = random.uniform(0, 3)
+                dur = random.uniform(2, 4)
+                stars += (
+                    '<div style="position:absolute;width:2px;height:2px;background:white;border-radius:50%;'
+                    'top:{top}%;left:{left}%;animation:driftParticle {dur}s {delay}s infinite;'
+                    '--dx:{dx}px;--dy:{dy}px;box-shadow:0 0 4px white;pointer-events:none;z-index:7"></div>'
+                ).format(top=random.randint(10,80), left=random.randint(5,90), dur=dur, delay=delay, dx=dx, dy=dy)
+            html_layers.append('<div style="position:absolute;inset:0;overflow:hidden;border-radius:14px;pointer-events:none;z-index:6">' + stars + '</div>')
+        elif anim_id == "cosmic_beam":
+            html_layers.append(
+                '<div style="position:absolute;inset:-35px;border-radius:50%;'
+                'background:conic-gradient(from 0deg,transparent 0deg,{c}33 25deg,transparent 50deg);'
+                'animation:beamRotate 3.5s linear infinite;pointer-events:none;z-index:6"></div>'.format(c=c)
+            )
+        elif anim_id == "particles_gold":
+            pts = ""
+            for _ in range(7):
+                dx, dy = random.randint(-20,20), random.randint(-50,-12)
+                delay, dur = random.uniform(0,2.5), random.uniform(1.5,3)
+                pts += '<div style="position:absolute;width:3px;height:3px;background:#ffd700;border-radius:50%;top:{t}%;left:{l}%;animation:driftParticle {d}s {dl}s infinite;--dx:{dx}px;--dy:{dy}px;box-shadow:0 0 5px #ffd700;z-index:7;pointer-events:none"></div>'.format(t=random.randint(20,80),l=random.randint(10,90),d=dur,dl=delay,dx=dx,dy=dy)
+            html_layers.append('<div style="position:absolute;inset:0;overflow:hidden;border-radius:14px;pointer-events:none;z-index:6">' + pts + '</div>')
+        elif anim_id == "particles_blue":
+            pts = ""
+            for _ in range(7):
+                dx, dy = random.randint(-20,20), random.randint(-50,-12)
+                delay, dur = random.uniform(0,2.5), random.uniform(1.5,3)
+                pts += '<div style="position:absolute;width:3px;height:3px;background:#4169e1;border-radius:50%;top:{t}%;left:{l}%;animation:driftParticle {d}s {dl}s infinite;--dx:{dx}px;--dy:{dy}px;box-shadow:0 0 6px #4169e1;z-index:7;pointer-events:none"></div>'.format(t=random.randint(20,80),l=random.randint(10,90),d=dur,dl=delay,dx=dx,dy=dy)
+            html_layers.append('<div style="position:absolute;inset:0;overflow:hidden;border-radius:14px;pointer-events:none;z-index:6">' + pts + '</div>')
+        elif anim_id == "particles_white":
+            pts = ""
+            for _ in range(8):
+                dx, dy = random.randint(-15,15), random.randint(-45,-8)
+                delay, dur = random.uniform(0,3), random.uniform(2,4)
+                pts += '<div style="position:absolute;width:2px;height:2px;background:white;border-radius:50%;top:{t}%;left:{l}%;animation:driftParticle {d}s {dl}s infinite;--dx:{dx}px;--dy:{dy}px;box-shadow:0 0 5px white;z-index:7;pointer-events:none"></div>'.format(t=random.randint(15,80),l=random.randint(10,90),d=dur,dl=delay,dx=dx,dy=dy)
+            html_layers.append('<div style="position:absolute;inset:0;overflow:hidden;border-radius:14px;pointer-events:none;z-index:6">' + pts + '</div>')
+        elif anim_id == "particles_fire":
+            pts = ""
+            for _ in range(6):
+                dx, dy = random.randint(-12,12), random.randint(-40,-10)
+                delay, dur = random.uniform(0,2), random.uniform(1.2,2.5)
+                pts += '<div style="position:absolute;width:3px;height:3px;background:#ff6600;border-radius:50%;bottom:{b}%;left:{l}%;animation:driftParticle {d}s {dl}s infinite;--dx:{dx}px;--dy:{dy}px;box-shadow:0 0 6px #ff4400;z-index:7;pointer-events:none"></div>'.format(b=random.randint(5,30),l=random.randint(15,85),d=dur,dl=delay,dx=dx,dy=dy)
+            html_layers.append('<div style="position:absolute;inset:0;overflow:hidden;border-radius:14px;pointer-events:none;z-index:6">' + pts + '</div>')
+        elif anim_id == "particles_purple":
+            pts = ""
+            for _ in range(7):
+                dx, dy = random.randint(-18,18), random.randint(-48,-10)
+                delay, dur = random.uniform(0,3), random.uniform(1.8,3.5)
+                pts += '<div style="position:absolute;width:3px;height:3px;background:#cc44ff;border-radius:50%;top:{t}%;left:{l}%;animation:driftParticle {d}s {dl}s infinite;--dx:{dx}px;--dy:{dy}px;box-shadow:0 0 6px #cc44ff;z-index:7;pointer-events:none"></div>'.format(t=random.randint(20,75),l=random.randint(10,90),d=dur,dl=delay,dx=dx,dy=dy)
+            html_layers.append('<div style="position:absolute;inset:0;overflow:hidden;border-radius:14px;pointer-events:none;z-index:6">' + pts + '</div>')
+        elif anim_id == "glassmorphism":
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;'
+                'background:rgba(255,255,255,0.06);backdrop-filter:blur(2px);'
+                'border:1px solid rgba(255,255,255,0.12);pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "dark_vignette":
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;'
+                'background:radial-gradient(ellipse at center,transparent 40%,rgba(0,0,0,0.6) 100%);'
+                'pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "color_overlay_red":
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;'
+                'background:rgba(180,0,0,0.18);pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "color_overlay_gold":
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;'
+                'background:rgba(200,160,0,0.16);pointer-events:none;z-index:6"></div>'
+            )
+        elif anim_id == "scanlines":
+            css_parts.append(
+                '@keyframes scanMove{0%{background-position:0 0}100%{background-position:0 20px}}'
+            )
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;overflow:hidden;pointer-events:none;z-index:8;">'
+                '<div style="position:absolute;inset:0;background:repeating-linear-gradient('
+                '0deg,transparent,transparent 3px,rgba(0,0,0,0.12) 3px,rgba(0,0,0,0.12) 4px);'
+                'animation:scanMove 0.5s linear infinite"></div></div>'
+            )
+        elif anim_id == "glow_pulse_gold":
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;border:2px solid #ffd700;'
+                'box-shadow:0 0 15px #ffd700,0 0 30px #ffd70066;animation:pulseGlow 2s infinite;'
+                'color:#ffd700;pointer-events:none;z-index:9"></div>'
+            )
+        elif anim_id == "glow_pulse_red":
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;border:2px solid #ff2200;'
+                'box-shadow:0 0 15px #ff2200,0 0 35px #ff220066;animation:iconGodPulse 1.8s infinite;'
+                'pointer-events:none;z-index:9"></div>'
+            )
+        elif anim_id == "glow_pulse_blue":
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;border:2px solid #4169e1;'
+                'box-shadow:0 0 15px #4169e1,0 0 35px #4169e166;animation:pulseGlow 2s infinite;'
+                'color:#4169e1;pointer-events:none;z-index:9"></div>'
+            )
+        elif anim_id == "glow_pulse_white":
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;border:2px solid #ffffff;'
+                'box-shadow:0 0 20px #ffffff99,0 0 40px #ffffff44;animation:pulseGlow 2.5s infinite;'
+                'color:white;pointer-events:none;z-index:9"></div>'
+            )
+        elif anim_id == "rainbow_border":
+            css_parts.append(
+                '@keyframes rbBorder{0%{border-color:#ff0000}16%{border-color:#ff8800}'
+                '33%{border-color:#ffff00}50%{border-color:#00ff88}'
+                '66%{border-color:#0088ff}83%{border-color:#8800ff}100%{border-color:#ff0000}}'
+            )
+            html_layers.append(
+                '<div style="position:absolute;inset:0;border-radius:14px;border:3px solid #ff0000;'
+                'animation:rbBorder 2s linear infinite;pointer-events:none;z-index:9"></div>'
+            )
+        elif anim_id == "hover_zoom":
+            css_parts.append(
+                '.mbt-card-wrap:hover .card-custom-hover-zoom{transform:scale(1.04)!important;}'
+            )
+            html_layers.append('<div class="card-custom-hover-zoom" style="position:absolute;inset:0;z-index:0;transition:transform 0.3s;pointer-events:none"></div>')
+        elif anim_id == "hover_tilt_3d":
+            css_parts.append(
+                '.mbt-card-wrap:hover{transform:translateY(-14px) scale(1.08) rotateX(6deg) rotateY(-4deg)!important;}'
+            )
+        elif anim_id == "hover_glow_color":
+            css_parts.append(
+                '.mbt-card-wrap:hover .card-hover-glow{{opacity:1!important;}}'
+            )
+            html_layers.append(
+                '<div class="card-hover-glow" style="position:absolute;inset:0;border-radius:14px;'
+                'background:radial-gradient(ellipse at 50% 25%,{c}33 0%,transparent 70%);'
+                'opacity:0;transition:opacity 0.35s;pointer-events:none;z-index:22"></div>'.format(c=c)
+            )
+        elif anim_id == "hover_crack":
+            css_parts.append(
+                '.mbt-card-wrap:hover .card-crack-svg{{opacity:1!important;}}'
+            )
+            html_layers.append(
+                '<svg class="card-crack-svg" style="position:absolute;inset:0;width:100%;height:100%;'
+                'opacity:0;transition:opacity 0.4s;z-index:20;pointer-events:none" viewBox="0 0 140 200">'
+                '<path d="M30,50 L90,90 L50,130 L110,170" stroke="{c}" stroke-width="1.5" fill="none" '
+                'stroke-dasharray="8,4" style="animation:cracksAnimate 2s infinite"/>'
+                '<path d="M100,30 L60,80 L115,120" stroke="{c}" stroke-width="1" fill="none" '
+                'stroke-dasharray="6,3" style="animation:cracksAnimate 2.5s 0.5s infinite"/>'
+                '</svg>'.format(c=c)
+            )
+        elif anim_id == "hover_shadow_epic":
+            css_parts.append(
+                '.mbt-card-wrap:hover{{filter:drop-shadow(0 30px 60px {c}99) drop-shadow(0 0 20px {c}44)!important;}}'.format(c=c)
+            )
+
+    custom_css = "<style>" + "\n".join(css_parts) + "</style>" if css_parts else ""
+    overlay_html = "\n".join(html_layers)
+    return custom_css, overlay_html
+
+
+def _file_to_b64(file_obj):
+    """Converte un file uploader object in base64."""
+    if file_obj is None:
+        return None, None
+    data = file_obj.read()
+    b64 = base64.b64encode(data).decode()
+    ext = file_obj.name.rsplit(".", 1)[-1].lower()
+    mime = {"png":"image/png","jpg":"image/jpeg","jpeg":"image/jpeg",
+            "webp":"image/webp","gif":"image/gif"}.get(ext, "image/png")
+    return b64, mime
+
+
+def render_card_html_custom(card_data, card_png_b64=None, card_png_mime="image/png",
+                             foto_b64=None, foto_mime="image/jpeg",
+                             custom_anim_css="", custom_anim_overlay="",
+                             size="normal", show_special_effects=True):
+    """
+    Versione avanzata di render_card_html che supporta:
+    - PNG carta personalizzato (card_png_b64) invece del tier default
+    - Foto giocatore come b64 invece di path
+    - Animazioni custom dall'editor
+    """
+    ovr = card_data.get("overall", 40)
+    tier_name = get_tier_by_ovr(ovr)
+    tier_info = CARD_TIERS.get(tier_name, CARD_TIERS["Bronzo Comune"])
+    color = tier_info["color"]
+    rarity = tier_info.get("rarity", 0)
+    nome = card_data.get("nome", "Unknown")
+    cognome = card_data.get("cognome", "")
+    role = card_data.get("ruolo", "SPIKER")
+    role_icon = ROLE_ICONS.get(role, "⚡")
+    atk = card_data.get("attacco", 40)
+    dif = card_data.get("difesa", 40)
+    bat = card_data.get("battuta", 40)
+
+    if size == "small":
+        width, font_ovr, font_name, font_first = "105px", "1.05rem", "0.55rem", "0.32rem"
+    elif size == "large":
+        width, font_ovr, font_name, font_first = "185px", "1.9rem", "0.95rem", "0.52rem"
+    else:
+        width, font_ovr, font_name, font_first = "140px", "1.4rem", "0.72rem", "0.42rem"
+
+    # Background: usa PNG custom se fornito, altrimenti tier default
+    if card_png_b64:
+        bg_style = "background-image:url('data:{mime};base64,{b64}');background-size:cover;background-position:center top;".format(
+            mime=card_png_mime, b64=card_png_b64)
+    else:
+        # Cerca PNG tier default
+        bg_b64_def, bg_mime_def = _get_card_bg_b64(tier_name)
+        if bg_b64_def:
+            bg_style = "background-image:url('data:{mime};base64,{b64}');background-size:cover;background-position:center top;".format(
+                mime=bg_mime_def, b64=bg_b64_def)
+        else:
+            bg_style = "background:linear-gradient(160deg,#111,#222,#111);"
+
+    bg_div = '<div class="mbt-card-bg-image" style="{}"></div>'.format(bg_style)
+
+    overlay_gradient = "linear-gradient(180deg,rgba(0,0,0,0.15) 0%,rgba(0,0,0,0.05) 35%,rgba(0,0,0,0.6) 72%,rgba(0,0,0,0.88) 100%)"
+    overlay_div = '<div class="mbt-card-overlay" style="background:{};"></div>'.format(overlay_gradient)
+
+    # Foto giocatore: usa b64 diretto se disponibile, altrimenti path
+    foto_html = ""
+    if foto_b64:
+        foto_html = '<img class="mbt-card-photo" src="data:{mime};base64,{b64}" style="opacity:0.9">'.format(
+            mime=foto_mime, b64=foto_b64)
+    else:
+        photo_path = card_data.get("foto_path", "")
+        if photo_path and os.path.exists(photo_path):
+            with open(photo_path, "rb") as f:
+                b64p = base64.b64encode(f.read()).decode()
+            ext = photo_path.rsplit(".", 1)[-1].lower()
+            mime_p = "image/png" if ext == "png" else "image/jpeg"
+            foto_html = '<img class="mbt-card-photo" src="data:{mime};base64,{b64}" style="opacity:0.9">'.format(
+                mime=mime_p, b64=b64p)
+        else:
+            foto_html = '<div class="mbt-card-photo-placeholder">{}</div>'.format(role_icon)
+
+    # Animazioni tier default (se no custom o se show_special_effects)
+    tier_anim = ""
+    if show_special_effects and not custom_anim_overlay:
+        tier_anim = _get_card_animation_overlay(tier_name, color, rarity)
+
+    border_style = _get_card_border_style(tier_name, color, rarity)
+    hover_overlay = '<div class="mbt-card-hover-overlay" style="background:radial-gradient(ellipse at 50% 25%,{}33 0%,transparent 65%);"></div>'.format(color)
+
+    hover_sign = ""
+    if rarity >= 8:
+        hover_sign = (
+            '<div class="card-signature" style="position:absolute;bottom:72px;width:100%;'
+            'text-align:center;font-family:cursive;font-size:0.7rem;color:{c};opacity:0;'
+            'transition:opacity 0.35s;z-index:15;text-shadow:0 0 10px {c}">✦ {n} ✦</div>'
+            '<style>.mbt-card-wrap:hover .card-signature{{opacity:1!important;}}</style>'
+        ).format(c=color, n=(cognome or nome).upper())
+
+    tier_short = tier_name.split()[0] if len(tier_name.split()) > 1 else tier_name
+
+    html = (
+        '{custom_css}'
+        '<div class="mbt-card-wrap" style="width:{width}">'
+        '<div class="mbt-card" style="width:{width};{border}">'
+        '{bg}{overlay}'
+        '<div class="mbt-card-ovr" style="color:{color};font-size:{fovr}">{ovr}</div>'
+        '<div class="mbt-card-tier-label" style="color:{color}">{tier_short}</div>'
+        '{foto}'
+        '<div class="mbt-card-name-block">'
+        '<span class="mbt-card-firstname" style="color:{color};font-size:{ffirst}">{first}</span>'
+        '<span class="mbt-card-lastname" style="color:{color};font-size:{fname}">{last}</span>'
+        '</div>'
+        '<div class="mbt-card-role" style="color:{color}">{role_icon} {role}</div>'
+        '<div class="mbt-card-stats">'
+        '<div class="mbt-stat"><div class="mbt-stat-val" style="color:{color}">{atk}</div><div class="mbt-stat-lbl">ATK</div></div>'
+        '<div class="mbt-stat"><div class="mbt-stat-val" style="color:{color}">{dif}</div><div class="mbt-stat-lbl">DEF</div></div>'
+        '<div class="mbt-stat"><div class="mbt-stat-val" style="color:{color}">{bat}</div><div class="mbt-stat-lbl">BAT</div></div>'
+        '</div>'
+        '{tier_anim}{custom_anim}{hover}{sign}'
+        '</div>'
+        '</div>'
+    ).format(
+        custom_css=custom_anim_css,
+        width=width, border=border_style,
+        bg=bg_div, overlay=overlay_div,
+        color=color, fovr=font_ovr, ovr=ovr, tier_short=tier_short,
+        foto=foto_html, ffirst=font_first, fname=font_name,
+        first=nome.upper(), last=(cognome or nome).upper(),
+        role_icon=role_icon, role=role,
+        atk=atk, dif=dif, bat=bat,
+        tier_anim=tier_anim,
+        custom_anim=custom_anim_overlay,
+        hover=hover_overlay, sign=hover_sign,
+    )
+    return html
+
+
 # ─── ADMIN TAB (accesso libero, nessuna password) ─────────────────────────────
 
 def _render_admin_tab(state, cards_db, rivals_data):
-    st.markdown("## ⚙️ Pannello Admin — Cards Creator")
-    admin_tabs = st.tabs(["➕ Crea Carta", "📋 Gestisci Carte", "🎁 Gestisci Coins"])
+    st.markdown("## ⚙️ Pannello Admin")
+    admin_tabs = st.tabs(["🎨 Crea & Edita Carta", "📋 Gestisci Carte", "🎁 Gestisci Coins"])
     with admin_tabs[0]:
         _render_card_creator(state, cards_db)
     with admin_tabs[1]:
@@ -1992,50 +2324,37 @@ def _render_admin_tab(state, cards_db, rivals_data):
 
 
 def _render_card_creator(state, cards_db):
-    st.markdown("### ✏️ Crea Nuova Carta")
-    col_form, col_preview = st.columns([2, 1])
+    st.markdown("### 🎨 Card Creator — Crea & Personalizza")
 
-    with col_form:
-        nome = st.text_input("Nome", key="cc_nome")
-        cognome = st.text_input("Cognome", key="cc_cognome")
-        ruolo = st.selectbox("Ruolo", ROLES, key="cc_ruolo")
-        st.markdown("---")
-        st.markdown("**Statistiche (0–125) — OVR calcolato automaticamente**")
-        col_s1, col_s2 = st.columns(2)
-        with col_s1:
-            atk = st.slider("⚡ Attacco", 0, 125, 70, key="cc_atk")
-            dif = st.slider("🛡️ Difesa", 0, 125, 68, key="cc_dif")
-            ric = st.slider("🤲 Ricezione", 0, 125, 65, key="cc_ric")
-        with col_s2:
-            bat = st.slider("🏐 Battuta", 0, 125, 67, key="cc_bat")
-            mur = st.slider("🧱 Muro", 0, 125, 62, key="cc_mur")
-            alz = st.slider("🎯 Alzata", 0, 125, 60, key="cc_alz")
+    # ── Sezione 1: Dati base ──────────────────────────────────────────────
+    with st.expander("📝 Dati Giocatore & Statistiche", expanded=True):
+        col_a, col_b = st.columns(2)
+        with col_a:
+            nome = st.text_input("Nome", key="cc_nome")
+            cognome = st.text_input("Cognome", key="cc_cognome")
+            ruolo = st.selectbox("Ruolo", ROLES, key="cc_ruolo")
+        with col_b:
+            col_s1, col_s2 = st.columns(2)
+            with col_s1:
+                atk = st.slider("⚡ ATK", 0, 125, 70, key="cc_atk")
+                dif = st.slider("🛡️ DEF", 0, 125, 68, key="cc_dif")
+                ric = st.slider("🤲 RIC", 0, 125, 65, key="cc_ric")
+            with col_s2:
+                bat = st.slider("🏐 BAT", 0, 125, 67, key="cc_bat")
+                mur = st.slider("🧱 MUR", 0, 125, 62, key="cc_mur")
+                alz = st.slider("🎯 ALZ", 0, 125, 60, key="cc_alz")
 
         overall = calcola_ovr_da_stats(atk, dif, ric, bat, mur, alz)
         tier_preview = get_tier_by_ovr(overall)
         tier_color = CARD_TIERS.get(tier_preview, {}).get("color", "#ffd700")
         st.markdown(
-            '<div style="font-family:Orbitron,sans-serif;font-size:0.9rem;color:{};margin-bottom:4px;font-weight:700">'
-            'OVR Calcolato: {} | Tier: {}'
-            '</div>'.format(tier_color, overall, tier_preview),
+            '<div style="font-family:Orbitron,sans-serif;font-size:0.95rem;color:{};font-weight:700;margin-top:6px">'
+            '⚡ OVR: {} &nbsp;|&nbsp; Tier: {}</div>'.format(tier_color, overall, tier_preview),
             unsafe_allow_html=True
         )
-        st.markdown("---")
-        foto_file = st.file_uploader("📷 Upload Foto Atleta", type=["png","jpg","jpeg"], key="cc_foto")
-        foto_path = ""
-        if foto_file:
-            os.makedirs(ASSETS_ICONS_DIR, exist_ok=True)
-            ext = foto_file.name.rsplit(".", 1)[-1].lower()
-            foto_path = os.path.join(
-                ASSETS_ICONS_DIR,
-                "{}_{}_{}.{}".format(nome or "player", cognome or "card", random.randint(1000, 9999), ext)
-            )
-            with open(foto_path, "wb") as f:
-                f.write(foto_file.read())
-            st.success("📷 Foto salvata: {}".format(foto_path))
 
         atleti_nomi = ["-- Nessuno --"] + [a["nome"] for a in state.get("atleti", [])]
-        selected_atleta_nome = st.selectbox("🔗 Collega a Atleta Torneo (opzionale)", atleti_nomi, key="cc_atleta_link")
+        selected_atleta_nome = st.selectbox("🔗 Collega a Atleta Torneo", atleti_nomi, key="cc_atleta_link")
         atleta_id_linked = None
         if selected_atleta_nome != "-- Nessuno --":
             linked = next((a for a in state.get("atleti", []) if a["nome"] == selected_atleta_nome), None)
@@ -2044,42 +2363,192 @@ def _render_card_creator(state, cards_db):
                 try:
                     from data_manager import calcola_overall_fifa
                     real_ovr = calcola_overall_fifa(linked)
-                    st.info("📊 OVR reale dall'app torneo: **{}**".format(real_ovr))
+                    st.info("📊 OVR reale dal torneo: **{}**".format(real_ovr))
                 except Exception:
                     pass
 
-    with col_preview:
-        st.markdown("#### 👁️ Anteprima Carta")
-        preview_card = {
-            "id": "preview",
-            "nome": nome or "NOME",
-            "cognome": cognome or "",
-            "overall": overall,
-            "ruolo": ruolo,
-            "attacco": atk,
-            "difesa": dif,
-            "battuta": bat,
-            "muro": mur,
-            "ricezione": ric,
-            "alzata": alz,
-            "foto_path": foto_path,
-        }
+    # ── Sezione 2: Upload immagini ────────────────────────────────────────
+    with st.expander("🖼️ Upload Immagini Carta", expanded=True):
+        st.markdown("""
+        <div style="background:#0d1117;border:1px solid #30363d;border-radius:10px;padding:12px;margin-bottom:12px">
+            <div style="font-family:Orbitron,sans-serif;font-size:0.7rem;color:#ffd700;font-weight:700;margin-bottom:6px">
+                📌 COME FUNZIONA
+            </div>
+            <div style="font-size:0.65rem;color:#888;line-height:1.6">
+                1. <b style="color:#ccc">PNG Corpo Carta</b> → l'immagine che fa da sfondo/corpo della carta (es. il template grafico del tier)<br>
+                2. <b style="color:#ccc">Foto Giocatore</b> → si posiziona sopra la carta, in sovrimpressione al centro<br>
+                3. Se non carichi il PNG carta, viene usato automaticamente il template del tier
+            </div>
+        </div>
+        """, unsafe_allow_html=True)
+
+        img_col1, img_col2 = st.columns(2)
+        with img_col1:
+            st.markdown("**🃏 PNG Corpo Carta** *(sostituisce il template tier)*")
+            card_png_file = st.file_uploader(
+                "Carica PNG/WebP carta", type=["png","webp","jpg","jpeg"],
+                key="cc_card_png",
+                help="Il tuo PNG grafico personalizzato che diventerà il corpo della carta"
+            )
+            if card_png_file:
+                st.image(card_png_file, caption="Preview corpo carta", width=140)
+                card_png_file.seek(0)
+
+        with img_col2:
+            st.markdown("**👤 Foto Giocatore** *(si sovrappone sulla carta)*")
+            foto_file = st.file_uploader(
+                "Carica foto giocatore", type=["png","jpg","jpeg","webp"],
+                key="cc_foto",
+                help="La foto del giocatore che apparirà sopra il corpo della carta"
+            )
+            if foto_file:
+                st.image(foto_file, caption="Preview foto giocatore", width=120)
+                foto_file.seek(0)
+
+    # ── Sezione 3: Editor Animazioni ──────────────────────────────────────
+    with st.expander("✨ Editor Animazioni (35 effetti)", expanded=False):
+        st.markdown("""
+        <div style="font-family:Orbitron,sans-serif;font-size:0.75rem;color:#ffd700;
+            margin-bottom:12px;font-weight:700">
+            🎬 SELEZIONA LE ANIMAZIONI DA APPLICARE ALLA CARTA
+        </div>
+        """, unsafe_allow_html=True)
+
+        selected_anims = st.session_state.get("cc_selected_anims", [])
+
+        for cat_name, cat_effects in ANIMATION_CATALOG.items():
+            st.markdown(
+                '<div style="font-size:0.75rem;font-weight:700;color:#aaa;'
+                'margin:10px 0 6px 0;letter-spacing:1px">{}</div>'.format(cat_name),
+                unsafe_allow_html=True
+            )
+            effect_cols = st.columns(len(cat_effects))
+            for j, (anim_id, (anim_label, anim_desc)) in enumerate(cat_effects.items()):
+                with effect_cols[j]:
+                    is_sel = anim_id in selected_anims
+                    bg = "#1a2a1a" if is_sel else "#0d0d1a"
+                    border = "#ffd700" if is_sel else "#1e1e3a"
+                    check = "✅" if is_sel else "○"
+                    st.markdown("""
+                    <div style="background:{bg};border:1px solid {bc};border-radius:8px;
+                        padding:8px 6px;text-align:center;margin-bottom:4px;min-height:70px">
+                        <div style="font-size:0.7rem;font-weight:700;color:{nc}">{lbl}</div>
+                        <div style="font-size:0.55rem;color:#666;margin-top:3px;line-height:1.3">{desc}</div>
+                        <div style="font-size:0.8rem;margin-top:4px">{check}</div>
+                    </div>
+                    """.format(
+                        bg=bg, bc=border, nc="#ffd700" if is_sel else "#ccc",
+                        lbl=anim_label, desc=anim_desc, check=check
+                    ), unsafe_allow_html=True)
+                    btn_label = "Rimuovi" if is_sel else "Aggiungi"
+                    if st.button(btn_label, key="anim_tog_{}_{}".format(cat_name[:3], anim_id), use_container_width=True):
+                        if is_sel:
+                            selected_anims.remove(anim_id)
+                        else:
+                            selected_anims.append(anim_id)
+                        st.session_state.cc_selected_anims = selected_anims
+                        st.rerun()
+
+        if selected_anims:
+            st.success("✅ Animazioni attive: {}".format(", ".join(selected_anims)))
+            if st.button("🗑️ Rimuovi tutte le animazioni", key="cc_clear_anims"):
+                st.session_state.cc_selected_anims = []
+                st.rerun()
+        else:
+            st.info("Nessuna animazione selezionata — verrà usata quella predefinita del tier")
+
+    # ── Anteprima live + salvataggio ──────────────────────────────────────
+    st.markdown("---")
+    st.markdown("### 👁️ Anteprima Live")
+
+    # Prepara b64 per anteprima
+    card_png_b64_prev, card_png_mime_prev = None, "image/png"
+    if card_png_file:
+        card_png_file.seek(0)
+        card_png_b64_prev, card_png_mime_prev = _file_to_b64(card_png_file)
+        card_png_file.seek(0)
+
+    foto_b64_prev, foto_mime_prev = None, "image/jpeg"
+    if foto_file:
+        foto_file.seek(0)
+        foto_b64_prev, foto_mime_prev = _file_to_b64(foto_file)
+        foto_file.seek(0)
+
+    selected_anims_prev = st.session_state.get("cc_selected_anims", [])
+    custom_css_prev, custom_overlay_prev = build_custom_animation_css(
+        selected_anims_prev,
+        card_color=tier_color
+    )
+
+    preview_card = {
+        "id": "preview", "nome": nome or "NOME", "cognome": cognome or "",
+        "overall": overall, "ruolo": ruolo,
+        "attacco": atk, "difesa": dif, "battuta": bat,
+        "muro": mur, "ricezione": ric, "alzata": alz,
+        "foto_path": "",
+    }
+
+    prev_col1, prev_col2, prev_col3 = st.columns([1, 2, 1])
+    with prev_col2:
         st.markdown(
-            '<div class="creator-preview-wrap">{}</div>'.format(render_card_html(preview_card, size="large")),
+            '<div class="creator-preview-wrap">{}</div>'.format(
+                render_card_html_custom(
+                    preview_card,
+                    card_png_b64=card_png_b64_prev,
+                    card_png_mime=card_png_mime_prev,
+                    foto_b64=foto_b64_prev,
+                    foto_mime=foto_mime_prev,
+                    custom_anim_css=custom_css_prev,
+                    custom_anim_overlay=custom_overlay_prev,
+                    size="large"
+                )
+            ),
             unsafe_allow_html=True
         )
         st.markdown("""
-        <div style="background:#10101e;border:1px solid {tc};border-radius:8px;padding:10px;text-align:center;margin-top:10px">
-            <div style="font-family:Orbitron,sans-serif;font-size:0.7rem;color:{tc};font-weight:700">{tier}</div>
+        <div style="background:#10101e;border:1px solid {tc};border-radius:8px;
+            padding:10px;text-align:center;margin-top:10px">
+            <div style="font-family:Orbitron,sans-serif;font-size:0.75rem;color:{tc};font-weight:700">{tier}</div>
             <div style="font-size:0.6rem;color:#888;margin-top:2px">OVR {ovr}</div>
+            <div style="font-size:0.55rem;color:#555;margin-top:2px">{n_anim} animazioni attive</div>
         </div>
-        """.format(tc=tier_color, tier=tier_preview, ovr=overall), unsafe_allow_html=True)
+        """.format(
+            tc=tier_color, tier=tier_preview, ovr=overall,
+            n_anim=len(selected_anims_prev)
+        ), unsafe_allow_html=True)
 
+    # ── Salvataggio ───────────────────────────────────────────────────────
     st.markdown("---")
     if st.button("💾 SALVA CARTA nel Database", use_container_width=True, type="primary"):
         if not nome:
-            st.error("Inserisci il nome del giocatore!")
+            st.error("Inserisci almeno il nome del giocatore!")
         else:
+            # Salva PNG carta se fornito
+            card_png_path = ""
+            if card_png_file:
+                card_png_file.seek(0)
+                os.makedirs(ASSETS_CARDS_DIR, exist_ok=True)
+                ext_cp = card_png_file.name.rsplit(".", 1)[-1].lower()
+                card_png_path = os.path.join(
+                    ASSETS_CARDS_DIR,
+                    "custom_{}_{}_{}.{}".format(nome, cognome or "card", random.randint(1000, 9999), ext_cp)
+                )
+                with open(card_png_path, "wb") as f:
+                    f.write(card_png_file.read())
+
+            # Salva foto giocatore se fornita
+            foto_path = ""
+            if foto_file:
+                foto_file.seek(0)
+                os.makedirs(ASSETS_ICONS_DIR, exist_ok=True)
+                ext_fp = foto_file.name.rsplit(".", 1)[-1].lower()
+                foto_path = os.path.join(
+                    ASSETS_ICONS_DIR,
+                    "{}_{}_{}.{}".format(nome, cognome or "player", random.randint(1000, 9999), ext_fp)
+                )
+                with open(foto_path, "wb") as f:
+                    f.write(foto_file.read())
+
             new_id = "card_{}_{}".format(cards_db["next_id"], random.randint(1000, 9999))
             cards_db["next_id"] += 1
             new_card = {
@@ -2088,22 +2557,54 @@ def _render_card_creator(state, cards_db):
                 "cognome": cognome,
                 "overall": overall,
                 "ruolo": ruolo,
-                "attacco": atk,
-                "difesa": dif,
-                "muro": mur,
-                "ricezione": ric,
-                "battuta": bat,
-                "alzata": alz,
+                "attacco": atk, "difesa": dif, "muro": mur,
+                "ricezione": ric, "battuta": bat, "alzata": alz,
                 "foto_path": foto_path,
+                "card_png_path": card_png_path,
+                "custom_animations": st.session_state.get("cc_selected_anims", []),
                 "tier": tier_preview,
                 "atleta_id": atleta_id_linked,
                 "created_at": datetime.now().isoformat(),
             }
             cards_db["cards"].append(new_card)
             save_cards_db(cards_db)
-            st.success("✅ Carta **{} {}** (OVR {} · {}) salvata!".format(nome, cognome, overall, tier_preview))
+            st.success("✅ Carta **{} {}** (OVR {} · {} · {} anim.) salvata!".format(
+                nome, cognome, overall, tier_preview,
+                len(new_card["custom_animations"])
+            ))
             st.session_state.cards_db = cards_db
+            st.session_state.cc_selected_anims = []
             st.rerun()
+
+
+def _load_card_png_b64(card):
+    """Carica il PNG corpo carta come b64 se esiste il path."""
+    card_png_path = card.get("card_png_path", "")
+    if card_png_path and os.path.exists(card_png_path):
+        with open(card_png_path, "rb") as f:
+            b64 = base64.b64encode(f.read()).decode()
+        ext = card_png_path.rsplit(".", 1)[-1].lower()
+        mime = {"png":"image/png","webp":"image/webp","jpg":"image/jpeg","jpeg":"image/jpeg"}.get(ext,"image/png")
+        return b64, mime
+    return None, "image/png"
+
+
+def _render_card_for_display(card, size="small", show_special_effects=True):
+    """Renderizza carta usando PNG custom + animazioni salvate se disponibili."""
+    tier_name = get_tier_by_ovr(card.get("overall", 40))
+    tier_color = CARD_TIERS.get(tier_name, {}).get("color", "#ffd700")
+    custom_anims = card.get("custom_animations", [])
+    card_png_b64, card_png_mime = _load_card_png_b64(card)
+    custom_css, custom_overlay = ("", "")
+    if custom_anims:
+        custom_css, custom_overlay = build_custom_animation_css(custom_anims, card_color=tier_color)
+    return render_card_html_custom(
+        card,
+        card_png_b64=card_png_b64, card_png_mime=card_png_mime,
+        custom_anim_css=custom_css, custom_anim_overlay=custom_overlay,
+        size=size,
+        show_special_effects=(show_special_effects and not custom_anims)
+    )
 
 
 def _render_card_manager(cards_db):
@@ -2122,7 +2623,7 @@ def _render_card_manager(cards_db):
         tc = CARD_TIERS.get(tier, {}).get("color", "#888")
         col1, col2, col3 = st.columns([1, 3, 1])
         with col1:
-            st.markdown(render_card_html(card, size="small", show_special_effects=False), unsafe_allow_html=True)
+            st.markdown(_render_card_for_display(card, size="small", show_special_effects=False), unsafe_allow_html=True)
         with col2:
             atk = card.get("attacco", 40)
             dif = card.get("difesa", 40)
