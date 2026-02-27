@@ -452,7 +452,7 @@ def empty_rivals_state():
     return {
         "player_level": 1,
         "player_xp": 0,
-        "mbt_coins": 100000000000,
+        "mbt_coins": 100_000_000,
         "trofei_rivals": 0,
         "collection": [],          # lista card_id possedute
         "active_team": [],         # max 5 card_id
@@ -1608,16 +1608,7 @@ def _render_powers_tab(rivals_data):
 def _render_admin_tab(state, cards_db, rivals_data):
     st.markdown("## ⚙️ Pannello Admin — Cards Creator")
 
-    # Password semplice
-    if not st.session_state.get("admin_unlocked_rivals"):
-        pwd = st.text_input("🔐 Password Admin", type="password", key="admin_pwd_rivals")
-        if st.button("Accedi", key="admin_login_rivals"):
-            if pwd in ("admin", "mbt2025", "rivals"):
-                st.session_state.admin_unlocked_rivals = True
-                st.rerun()
-            else:
-                st.error("Password errata")
-        return
+    st.session_state.admin_unlocked_rivals = True
 
     admin_tabs = st.tabs(["➕ Crea Carta", "📋 Gestisci Carte", "🎁 Gestisci Coins"])
 
@@ -1810,7 +1801,7 @@ def _render_coins_manager(rivals_data):
 
     if st.button("🔄 Reset Dati Rivals", key="admin_reset_rivals"):
         st.session_state.rivals_data = empty_rivals_state()
-        st.session_state.rivals_data["mbt_coins"] = 1000
+        st.session_state.rivals_data["mbt_coins"] = 100_000_000
         save_rivals_data(st.session_state.rivals_data)
         st.success("✅ Dati Rivals resettati con 1000 Coins di partenza.")
         st.rerun()
