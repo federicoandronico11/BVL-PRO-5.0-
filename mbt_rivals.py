@@ -452,7 +452,7 @@ def empty_rivals_state():
     return {
         "player_level": 1,
         "player_xp": 0,
-        "mbt_coins": 500,
+        "mbt_coins": 100000000000,
         "trofei_rivals": 0,
         "collection": [],          # lista card_id possedute
         "active_team": [],         # max 5 card_id
